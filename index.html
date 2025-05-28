@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IE Wordle</title>
+  <link rel="icon" href="https://cdn.glitch.global/4074a03a-c66e-43ec-98bb-94fa275f5807/Wordle%20IE.png?v=1748380285015" type="image/png" />
+  <style>
+    body {
+      font-family: sans-serif;
+      background-image: url('https://cdn.glitch.global/4074a03a-c66e-43ec-98bb-94fa275f5807/56e6cdb86674cacc3e01fbe36ef934e56a30d57a86fa1756bf58f37b6d1bb228.jpg?v=1748290117040');
+      background-size: cover;
+      background-position: center;
+      padding: 1rem;
+      text-align: center;
+      color: #fff;
+      text-shadow: 0 0 5px #000;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(var(--length), minmax(40px, 1fr));
+      gap: 5px;
+      justify-content: center;
+      margin: 20px auto;
+    }
+    .tile {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: bold;
+      text-transform: uppercase;
+      border: 2px solid #ccc;
+      background: white;
+      transition: transform 0.3s ease, background-color 0.3s ease;
+    }
+    .tile.revealed {
+      animation: flip 0.5s ease forwards;
+    }
+    @keyframes flip {
+      0% { transform: rotateX(0); }
+      50% { transform: rotateX(90deg); }
+      100% { transform: rotateX(0); }
+    }
+    .green { background-color: #6aaa64; color: white; border: none; }
+    .yellow { background-color: #c9b458; color: white; border: none; }
+    .gray { background-color: #787c7e; color: white; border: none; }
+    .red { background-color: #f44336; color: white; border: none; }
+    .keyboard { margin-top: 20px; }
+    .key {
+      padding: 8px 10px;
+      margin: 2px;
+      font-size: 14px;
+      border: none;
+      border-radius: 4px;
+      background-color: #d3d6da;
+      cursor: default;
+      transition: background-color 0.3s;
+    }
+    .key.green { background-color: #6aaa64; color: white; }
+    .key.yellow { background-color: #c9b458; color: white; }
+    .key.gray { background-color: #787c7e; color: white; }
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    #hintBox {
+      max-width: 90%;
+      border: 2px solid #333;
+      padding: 10px;
+      background-color: #fff3cd;
+      color: #000;
+      text-align: left;
+      display: none;
+    }
+    #victoryPopup, #defeatPopup {
+      position: fixed;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -30%);
+      background: #fff;
+      padding: 20px;
+      border: 3px solid #4caf50;
+      border-radius: 10px;
+      box-shadow: 0 0 20px #4caf50;
+      font-size: 18px;
+      color: #000;
+      display: none;
+      z-index: 10;
+      max-width: 90%;
+    }
+    #defeatPopup { border-color: #f44336; box-shadow: 0 0 20px #f44336; }
+    #copyText {
+      font-size: 14px;
+      margin-top: 10px;
+      color: #333;
+      user-select: all;
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #lockedMessage {
+      font-size: 18px;
+      color: #ffeb3b;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      margin-top: 20px;
+      border-radius: 10px;
+      display: none;
+    }
+    #suggestions {
+      position: absolute;
+      background: white;
+      color: black;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      width: 90%;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 5;
+      display: none;
+      border-radius: 5px;
+    }
+    #suggestions div {
+      padding: 5px;
+      cursor: pointer;
+    }
+    #suggestions div:hover {
+      background-color: #eee;
+    }
+  </style>
+</head>
+<body>
+  <h1>Inazuma Eleven Wordle</h1>
+  <p id="statusMessage">Adivina el personaje secreto. Tienes 5 intentos.</p>
+  <input type="text" id="guess" maxlength="30" placeholder="Escribe aquí" oninput="showSuggestions()" autocomplete="off" />
+  <div id="suggestions"></div>
+  <button onclick="submitGuess()">Intentar</button>
+  <div class="container">
+    <div id="board"></div>
+    <div id="hintBox">
+      <h3>Información del personaje</h3>
+      <ul id="hintList"></ul>
+    </div>
+  </div>
+  <div class="keyboard" id="keyboard"></div>
+  <p id="feedback"></p>
+  <div id="victoryPopup">
+    🎉 ¡Felicidades!<br><br>
+    <div id="copyText"></div>
+    <button onclick="copyVictoryText()">📋 Copiar texto</button>
+    <a id="tweetLink" target="_blank" style="margin-left:10px;display:inline-block;">🐦 Compartir en Twitter</a>
+  </div>
+  <div id="defeatPopup">
+    😢 ¡Has perdido! Intenta de nuevo mañana.
+  </div>
+  <div id="lockedMessage">⚠️ Atención, dormir y mañana haceis el jugador del día, gracias por disfrutarlo ❤️</div>
+  <script>
+    let secretWord = '';
+    let characterHints = [];
+    let guesses = [];
+    let usedLetters = {};
+    let attempts = 0;
+    const maxAttempts = 5;
+    const todayKey = new Date().toISOString().split('T')[0];
+    const savedDate = localStorage.getItem('lastPlayed');
+    let allCharacters = [];
+
+    function isBlockedTime() {
+      const now = new Date();
+      const hour = now.getHours();
+      const minutes = now.getMinutes();
+      return hour >= 22 || hour < 6 || (hour === 6 && minutes < 45);
+    }
+
+    if (savedDate === todayKey) {
+      document.getElementById('statusMessage').textContent = 'Ya has hecho el Wordle de hoy. ¡Vuelve mañana!';
+      document.getElementById('guess').disabled = true;
+    } else if (isBlockedTime()) {
+      document.getElementById('guess').disabled = true;
+      document.getElementById('statusMessage').style.display = 'none';
+      document.getElementById('lockedMessage').style.display = 'block';
+    }
+
+    fetch('personaje.txt')
+      .then(r => r.text())
+      .then(text => {
+        const lines = text.trim().split('\n');
+        secretWord = lines[0].split(',')[0].toLowerCase();
+        characterHints = lines.slice(1);
+      });
+
+    fetch('personajes.txt')
+      .then(r => r.text())
+      .then(text => {
+        allCharacters = text.trim().split('\n').map(p => p.trim().toLowerCase());
+      });
+
+    function showSuggestions() {
+      const input = document.getElementById('guess');
+      const suggestionsBox = document.getElementById('suggestions');
+      const value = input.value.toLowerCase();
+
+      if (!value) {
+        suggestionsBox.style.display = 'none';
+        return;
+      }
+
+      const matches = allCharacters.filter(name => name.startsWith(value)).slice(0, 10);
+
+      if (matches.length === 0) {
+        suggestionsBox.style.display = 'none';
+        return;
+      }
+
+      suggestionsBox.innerHTML = matches.map(name => `
+        <div onclick="selectSuggestion('${name}')">${name}</div>
+      `).join('');
+
+      suggestionsBox.style.display = 'block';
+    }
+
+    function selectSuggestion(name) {
+      document.getElementById('guess').value = name;
+      document.getElementById('suggestions').style.display = 'none';
+    }
+
+    function getLetterColor(letter, index, word) {
+      if (secretWord[index] === letter) return 'green';
+      if (secretWord.includes(letter)) return 'yellow';
+      return 'gray';
+    }
+
+    function colorPriority(newColor, oldColor) {
+      const rank = { gray: 0, yellow: 1, green: 2 };
+      return (!oldColor || rank[newColor] > rank[oldColor]) ? newColor : oldColor;
+    }
+
+    function drawBoard() {
+      const board = document.getElementById('board');
+      board.innerHTML = '';
+      for (let i = 0; i < guesses.length; i++) {
+        const row = document.createElement('div');
+        const currentGuess = guesses[i];
+        const totalTiles = currentGuess.length;
+        row.className = 'grid';
+        row.style.setProperty('--length', totalTiles);
+
+        for (let j = 0; j < totalTiles; j++) {
+          const cell = document.createElement('div');
+          cell.className = 'tile';
+          const letter = currentGuess[j] || '';
+          if (letter) {
+            let color = '';
+            if (currentGuess.length > secretWord.length && j >= secretWord.length) {
+              color = 'red';
+            } else if (j < secretWord.length) {
+              color = getLetterColor(letter, j, currentGuess);
+              usedLetters[letter] = colorPriority(color, usedLetters[letter]);
+            }
+            setTimeout(() => {
+              cell.classList.add('revealed');
+              if (color) cell.classList.add(color);
+              if (j === totalTiles - 1 && currentGuess === secretWord) {
+                setTimeout(showVictory, 600);
+              }
+            }, j * 200);
+          }
+          cell.textContent = letter;
+          row.appendChild(cell);
+        }
+        board.appendChild(row);
+      }
+    }
+
+    function submitGuess() {
+      const input = document.getElementById('guess');
+      const guess = input.value.toLowerCase().trim();
+      if (!guess || !allCharacters.includes(guess)) {
+        alert('Ese personaje no está en la lista.');
+        return;
+      }
+      guesses.push(guess);
+      attempts++;
+      drawBoard();
+      if (guess === secretWord) return;
+      if (attempts - 1 < characterHints.length) {
+        const hintBox = document.getElementById('hintBox');
+        const hintList = document.getElementById('hintList');
+        const li = document.createElement('li');
+        li.textContent = characterHints[attempts - 1];
+        hintList.appendChild(li);
+        hintBox.style.display = 'block';
+      }
+      if (attempts >= maxAttempts && guess !== secretWord) {
+        localStorage.setItem('lastPlayed', todayKey);
+        document.getElementById('defeatPopup').style.display = 'block';
+      }
+      input.value = '';
+      document.getElementById('suggestions').style.display = 'none';
+    }
+
+    function showVictory() {
+      const streak = parseInt(localStorage.getItem('winStreak') || '0') + 1;
+      localStorage.setItem('winStreak', streak);
+      localStorage.setItem('lastPlayed', todayKey);
+      const text = `🔥 IE Wordle\n🎯 Intentos: ${attempts}\n🔥 Racha: ${streak} día(s)\n👉 https://ie-wordle.glitch.me`;
+      document.getElementById('copyText').textContent = text;
+      document.getElementById('tweetLink').href = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+      document.getElementById('victoryPopup').style.display = 'block';
+    }
+
+    function copyVictoryText() {
+      const text = document.getElementById('copyText').textContent;
+      if (document.hasFocus()) {
+        navigator.clipboard.writeText(text).then(() => {
+          setTimeout(() => alert('Texto copiado 📋'), 100);
+        });
+      } else {
+        alert('Haz clic en la página antes de copiar el texto.');
+      }
+    }
+  </script>
+</body>
+</html>
